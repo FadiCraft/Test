@@ -2,10 +2,8 @@ name: Auto Scraper Simple
 
 on:
   schedule:
-    # يعمل تلقائياً كل 12 ساعة لتحديث البيانات
     - cron: '0 */12 * * *'
   workflow_dispatch:
-    # يتيح لك التشغيل الفوري يدوياً بضغطة زر من موقع جيتهاب
 
 jobs:
   scrape-and-save:
@@ -14,35 +12,28 @@ jobs:
       contents: write
 
     steps:
-    # 1. سحب كود المشروع من المستودع
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. تهيئة بيئة Node.js 20 المستقرة
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
 
-    # 3. تثبيت مكتبة cheerio لتحليل الـ HTML
     - name: Install dependencies
       run: npm install cheerio
 
-    # 4. تشغيل السكربت لتحديث الملف
     - name: Run Scraper
       run: node scraper.js
 
-    # 5. عمل الـ Commit والـ Push لحفظ ملف movies.json المحدث في مستودعك
     - name: Commit and Push changes
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
-        
         git add movies.json
-        
         if git diff --cached --quiet; then
-          echo "لا توجد أي تحديثات جديدة مضافة حالياً."
+          echo "لا توجد تحديثات جديدة."
         else
-          git commit -m "تحديث تلقائي مبسط لملف movies.json"
+          git commit -m "تحديث البيانات الشاملة وتصحيح روابط الصور"
           git push
         fi
