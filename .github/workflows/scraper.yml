@@ -1,44 +1,38 @@
-name: Auto Movie Scraper (Clip Cafe)
+name: Auto Scraper Simple
 
 on:
   schedule:
-    # يعمل تلقائياً كل 12 ساعة
+    # يعمل تلقائياً كل 12 ساعة لتحديث البيانات
     - cron: '0 */12 * * *'
   workflow_dispatch:
-    # يتيح لك التشغيل الفوري يدوياً في أي وقت
+    # يتيح لك التشغيل الفوري يدوياً بضغطة زر من موقع جيتهاب
 
 jobs:
   scrape-and-save:
     runs-on: ubuntu-latest
-    
     permissions:
       contents: write
 
     steps:
-    # 1. سحب آخر نسخة من كود المستودع
+    # 1. سحب كود المشروع من المستودع
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. تهيئة بيئة نود جافاسكريبت المستقرة
+    # 2. تهيئة بيئة Node.js 20 المستقرة
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
 
-    # 3. تثبيت مكتبة cheerio السريعة لتفكيك الـ HTML
+    # 3. تثبيت مكتبة cheerio لتحليل الـ HTML
     - name: Install dependencies
       run: npm install cheerio
 
-    # 4. إنشاء ملف احتياطي تجنباً للمشاكل
-    - name: Create baseline file
-      run: |
-        if [ ! -f movies.json ]; then echo "[]" > movies.json; fi
-
-    # 5. تنفيذ السكربت الذكي واستخراج كافة تفاصيل الميتا والمقاطع الفيديوية
+    # 4. تشغيل السكربت لتحديث الملف
     - name: Run Scraper
       run: node scraper.js
 
-    # 6. تحديث المستودع بالملفات المحدثة تلقائياً
+    # 5. عمل الـ Commit والـ Push لحفظ ملف movies.json المحدث في مستودعك
     - name: Commit and Push changes
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -47,8 +41,8 @@ jobs:
         git add movies.json
         
         if git diff --cached --quiet; then
-          echo "لم يطرأ أي تغيير جديد في تحديثات الموقع حالياً."
+          echo "لا توجد أي تحديثات جديدة مضافة حالياً."
         else
-          git commit -m "تحديث تلقائي: تم تجديد وتفصيل محتوى أفلام ومقاطع Clip.cafe"
+          git commit -m "تحديث تلقائي مبسط لملف movies.json"
           git push
         fi
