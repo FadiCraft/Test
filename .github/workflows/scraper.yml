@@ -2,10 +2,10 @@ name: Auto Movie and Series Scraper
 
 on:
   schedule:
-    # يشتغل تلقائياً كل 12 ساعة
+    # يعمل تلقائياً كل 12 ساعة
     - cron: '0 */12 * * *'
   workflow_dispatch:
-    # يتيح لك تشغيله يدوياً بضغطة زر من موقع جيتهاب
+    # يتيح لك التشغيل يدوياً بضغطة زر من تبويب Actions في موقع جيتهاب
 
 jobs:
   scrape-and-save:
@@ -15,34 +15,42 @@ jobs:
       contents: write
 
     steps:
-    # 1. سحب الكود من المستودع
+    # 1. سحب ملفات المشروع من المستودع الخاص بك
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. إعداد بيئة Node.js (استخدام نسخة 20 المستقرة)
+    # 2. تهيئة جافاسكريبت نود 20 المستقرة
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
 
-    # 3. تثبيت مكتبة cheerio فقط (تم الاستغناء عن axios)
+    # 3. تثبيت مكتبة cheerio فقط (تم التخلي عن axios لعدم حاجتنا لها)
     - name: Install dependencies
       run: npm install cheerio
 
-    # 4. تشغيل السكربت
+    # 4. خطوة وقائية لإنشاء ملفات JSON فارغة لتفادي انهيار الأكشن إذا كانت فارغة أول مرة
+    - name: Create baseline files
+      run: |
+        if [ ! -f movies.json ]; then echo "[]" > movies.json; fi
+        if [ ! -f series.json ]; then echo "[]" > series.json; fi
+
+    # 5. تشغيل السكربت لتحديث الملفات وتخطي جدار الحماية
     - name: Run Scraper
       run: node scraper.js
 
-    # 5. رفع وحفظ ملفات الـ JSON في مستودعك تلقائياً
+    # 6. دفع الملفات المحدثة إلى مستودعك الخاص مجدداً
     - name: Commit and Push changes
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         
         git add movies.json series.json
+        
+        # التأكد ما إذا كان هناك بيانات جديدة حقيقية دخلت للملفات لتجنب الأخطاء
         if git diff --cached --quiet; then
-          echo "لا توجد تحديثات جديدة للبيانات."
+          echo "لا توجد أي بيانات جديدة مضافة، أو لم يتغير شيء."
         else
-          git commit -m "تحديث تلقائي: تم تجديد ملفات movies.json و series.json"
+          git commit -m "تحديث تلقائي: تم تجديد ملفات movies.json و series.json وتخطي جدار الحماية"
           git push
         fi
