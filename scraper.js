@@ -1,10 +1,10 @@
-const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 
-// إعدادات الـ Headers لمحاكاة المتصفح
+// إعداد الـ Headers لمنع الحظر ومحاكاة متصفح حقيقي
 const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
 };
 
 async function scrapeMovies() {
@@ -12,27 +12,30 @@ async function scrapeMovies() {
     console.log(`جاري جلب الأفلام من: ${url}`);
 
     try {
-        const { data } = await axios.get(url, { headers: HEADERS, timeout: 15000 });
+        const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`فشل الاتصال بالموقع، كود الخطأ: ${response.status}`);
+        
+        const data = await response.text();
         const $ = cheerio.load(data);
         const moviesList = [];
 
-        // استهداف عناصر الأفلام بناءً على كلاس poster
+        // استخراج الأفلام بناءً على كلاس الـ poster الخاص بالرابط
         $('a.poster').each((index, element) => {
             try {
                 const elem = $(element);
                 const link = elem.attr('href')?.trim() || '';
                 const titleAttr = elem.attr('title')?.trim() || '';
 
-                // استخراج الصورة
+                // جلب رابط الصورة
                 const imgTag = elem.find('img');
                 let image = imgTag.attr('src')?.trim() || imgTag.attr('data-src')?.trim() || '';
 
-                // استخراج الميتا (السنة والتقييم)
+                // جلب السنة والتقييم من الميتا
                 const metaSpans = elem.find('div.poster-meta span');
                 const year = $(metaSpans[0]).text().trim();
                 const imdb = $(metaSpans[2]).text().trim();
 
-                // استخراج العنوان واللغة
+                // جلب العنوان واللغة
                 const title = elem.find('strong.poster-title').text().trim() || titleAttr;
                 const lang = elem.find('span.poster-lang').text().replace(/\s+/g, ' ').trim();
 
@@ -49,12 +52,12 @@ async function scrapeMovies() {
             }
         });
 
-        // حفظ الملف بصيغة JSON
+        // حفظ البيانات في ملف movies.json
         fs.writeFileSync('movies.json', JSON.stringify(moviesList, null, 4), 'utf-8');
-        console.log(` تم حفظ ${moviesList.length} فيلم بنجاح في movies.json`);
+        console.log(`✅ تم حفظ ${moviesList.length} فيلم بنجاح في movies.json`);
 
     } catch (error) {
-        console.error('خطأ أثناء جلب صفحة الأفلام:', error.message);
+        console.error('❌ خطأ أثناء جلب صفحة الأفلام:', error.message);
     }
 }
 
@@ -63,21 +66,24 @@ async function scrapeSeries() {
     console.log(`جاري جلب المسلسلات من: ${url}`);
 
     try {
-        const { data } = await axios.get(url, { headers: HEADERS, timeout: 15000 });
+        const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`فشل الاتصال بالموقع، كود الخطأ: ${response.status}`);
+
+        const data = await response.text();
         const $ = cheerio.load(data);
         const seriesList = [];
 
-        // استهداف عناصر المسلسلات بناءً على كلاس mini-poster
+        // استخراج المسلسلات بناءً على كلاس mini-poster
         $('a.mini-poster').each((index, element) => {
             try {
                 const elem = $(element);
                 const link = elem.attr('href')?.trim() || '';
 
-                // استخراج الصورة
+                // جلب رابط الصورة
                 const imgTag = elem.find('img');
                 const image = imgTag.attr('src')?.trim() || imgTag.attr('data-src')?.trim() || '';
 
-                // استخراج معلومات الحلقة والعنوان والوقت
+                // جلب رقم الحلقة، العنوان، التاريخ واللغة
                 const episodeInfo = elem.find('div.mini-poster-episode-info').text().replace(/\s+/g, ' ').trim();
                 const title = elem.find('h4.mini-poster-title').text().trim();
                 const date = elem.find('time.episode-date').text().trim();
@@ -96,16 +102,16 @@ async function scrapeSeries() {
             }
         });
 
-        // حفظ الملف بصيغة JSON
+        // حفظ البيانات في ملف series.json
         fs.writeFileSync('series.json', JSON.stringify(seriesList, null, 4), 'utf-8');
-        console.log(` تم حفظ ${seriesList.length} حلقة مسلسل بنجاح في series.json`);
+        console.log(`✅ تم حفظ ${seriesList.length} حلقة مسلسل بنجاح في series.json`);
 
     } catch (error) {
-        console.error('خطأ أثناء جلب صفحة المسلسلات:', error.message);
+        console.error('❌ خطأ أثناء جلب صفحة المسلسلات:', error.message);
     }
 }
 
-// تشغيل الدوال بالتتابع
+// دالة التشغيل الرئيسية
 async function main() {
     await scrapeMovies();
     console.log('-'.repeat(30));
