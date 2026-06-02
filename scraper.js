@@ -3,10 +3,10 @@ const fs = require('fs');
 
 const BASE_URL = 'https://clip.cafe/';
 const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
-// دالة مبسطة لجلب تفاصيل الفيلم ورابط فيديو واحد فقط
+// دالة مبسطة لجلب تفاصيل الفيلم ورابط فيديو واحد فقط من داخل صفحته
 async function fetchMovieDetails(movieLink) {
     try {
         const response = await fetch(movieLink, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
@@ -18,7 +18,7 @@ async function fetchMovieDetails(movieLink) {
         // 1. استخراج الوصف
         const description = $('.movie-description').text().trim() || "";
 
-        // 2. استخراج المخرج والسنة ببساطة
+        // 2. استخراج المخرج والسنة ببساطة من جدول الميتا
         let director = "";
         let year = "";
         $('.movie-meta-item').each((i, elem) => {
@@ -28,7 +28,7 @@ async function fetchMovieDetails(movieLink) {
             if (label.includes('year')) year = value;
         });
 
-        // 3. جلب أول مقطع فيديو يواجهه السكربت فقط لتوفير المساحة والسرعة
+        // 3. جلب أول مقطع فيديو يواجهه السكربت فقط (فيديو واحد وبسيط)
         let videoLink = "";
         const firstClip = $('.clip-card-collect-wrapper').first().find('a.smallClipContainer').attr('href');
         if (firstClip) {
@@ -47,13 +47,14 @@ async function startScraping() {
 
     try {
         const response = await fetch(targetUrl, { headers: HEADERS });
-        if (!response.ok) throw new Error(`خطأ: ${response.status}`);
+        if (!response.ok) throw new Error(`خطأ في جلب الصفحة الرئيسية: ${response.status}`);
 
         const html = await response.text();
         const $ = cheerio.load(html);
         const moviesList = [];
         const promises = [];
 
+        // استخراج الأفلام بناءً على كلاس الـ poster المطلبوع
         $('a.moviePosterBox').each((index, element) => {
             const elem = $(element);
             const title = elem.attr('title')?.trim() || elem.find('.movieTitle').text().trim();
@@ -73,7 +74,7 @@ async function startScraping() {
                 };
                 moviesList.push(item);
 
-                // جلب التفاصيل بشكل متوازٍ وسريع جداً
+                // جلب التفاصيل بشكل متوازٍ وسريع جداً لجميع الأفلام
                 promises.push(
                     fetchMovieDetails(link).then(details => {
                         if (details) {
@@ -87,8 +88,10 @@ async function startScraping() {
             }
         });
 
+        // الانتظار حتى تنتهي جميع الصفحات الداخلية من جلب بياناتها
         await Promise.all(promises);
 
+        // حفظ النتيجة في ملف movies.json
         fs.writeFileSync('movies.json', JSON.stringify(moviesList, null, 4), 'utf-8');
         console.log(`✅ تم حفظ ${moviesList.length} عنصر بنجاح في movies.json`);
 
