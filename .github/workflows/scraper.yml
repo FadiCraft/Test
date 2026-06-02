@@ -1,9 +1,11 @@
-name: Auto Movie and Series Scraper
+name: Auto Movie Scraper (Clip Cafe)
 
 on:
   schedule:
+    # يعمل تلقائياً كل 12 ساعة
     - cron: '0 */12 * * *'
   workflow_dispatch:
+    # يتيح لك التشغيل الفوري يدوياً في أي وقت
 
 jobs:
   scrape-and-save:
@@ -13,35 +15,40 @@ jobs:
       contents: write
 
     steps:
+    # 1. سحب آخر نسخة من كود المستودع
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # 2. تهيئة بيئة نود جافاسكريبت المستقرة
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
 
+    # 3. تثبيت مكتبة cheerio السريعة لتفكيك الـ HTML
     - name: Install dependencies
       run: npm install cheerio
 
-    - name: Create baseline files
+    # 4. إنشاء ملف احتياطي تجنباً للمشاكل
+    - name: Create baseline file
       run: |
-        echo "[]" > movies.json
-        echo "[]" > series.json
+        if [ ! -f movies.json ]; then echo "[]" > movies.json; fi
 
+    # 5. تنفيذ السكربت الذكي واستخراج كافة تفاصيل الميتا والمقاطع الفيديوية
     - name: Run Scraper
       run: node scraper.js
 
+    # 6. تحديث المستودع بالملفات المحدثة تلقائياً
     - name: Commit and Push changes
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         
-        git add movies.json series.json
+        git add movies.json
         
         if git diff --cached --quiet; then
-          echo "لم يتم العثور على بيانات جديدة لحفظها حالياً."
+          echo "لم يطرأ أي تغيير جديد في تحديثات الموقع حالياً."
         else
-          git commit -m "تحديث تلقائي فوري وسريع للبيانات"
+          git commit -m "تحديث تلقائي: تم تجديد وتفصيل محتوى أفلام ومقاطع Clip.cafe"
           git push
         fi
