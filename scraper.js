@@ -1,139 +1,143 @@
 const cheerio = require('cheerio');
 const fs = require('fs');
 
-// استخدام بوابة بروكسب قوية تقوم بتشغيل الجافاسكريبت وتخطي حماية Cloudflare تماماً
-function getBypassUrl(targetUrl) {
-    return `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-}
+const BASE_URL = 'https://clip.cafe/';
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+};
 
-async function scrapeMovies() {
-    const targetUrl = 'https://www.hdfilmcehennemi.nl/category/film-izle-2/';
-    console.log(`🚀 جاري جلب الأفلام من: ${targetUrl}`);
-
+// دالة لجلب تفاصيل الفيلم من صفحته الخاصة
+async function fetchMovieDetails(movieLink) {
     try {
-        // إضافة مرونة في الطلب: نقوم بطلب الصفحة عبر الخدمة الوسيطة مع ترويسة متصفح حقيقي
-        const response = await fetch(getBypassUrl(targetUrl), {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        
-        if (!response.ok) throw new Error(`فشل الاتصال: ${response.status}`);
-        
-        const jsonResult = await response.json();
-        let htmlData = jsonResult.contents;
+        const response = await fetch(movieLink, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
+        if (!response.ok) return null;
 
-        if (!htmlData) throw new Error("المحتوى فارغ");
+        const html = await response.text();
+        const $ = cheerio.load(html);
 
-        const $ = cheerio.load(htmlData);
-        const moviesList = [];
+        // 1. استخراج الوصف
+        const description = $('.movie-description').text().trim() || "";
 
-        // السحب المرن: يبحث عن الروابط التي تحتوي على الكلاس poster أو تبدأ برابط الفيلم
-        $('a').each((index, element) => {
-            const elem = $(element);
-            const href = elem.attr('href') || '';
-            
-            // التحقق من أن الرابط يطابق كلاس الفيلم أو هيكل البوستر المرفق
-            if (elem.hasClass('poster') || href.includes('hdfilmcehennemi.nl/')) {
-                const title = elem.attr('title')?.trim() || elem.find('strong.poster-title').text().trim();
-                const link = href.trim();
-                
-                // تخطي الروابط العامة أو المكررة
-                if (!title || link.includes('/category/') || link.includes('/yabancidizi')) return;
+        // 2. استخراج البيانات التعريفية (Meta Grid)
+        const meta = {
+            director: "",
+            year: "",
+            genre: [],
+            boxOffice: "",
+            production: "",
+            awards: ""
+        };
 
-                const imgTag = elem.find('img');
-                const image = imgTag.attr('src') || imgTag.attr('data-src') || imgTag.attr('data-srcset') || '';
+        $('.movie-meta-item').each((i, elem) => {
+            const label = $(elem).find('.movie-meta-label').text().trim().toLowerCase();
+            const valueElem = $(elem).find('.movie-meta-value');
 
-                const metaSpans = elem.find('.poster-meta span, span');
-                const year = $(metaSpans[0]).text().trim() || "غير محدد";
-                const imdb = elem.find('.imdb').text().trim() || "0.0";
-
-                const lang = elem.find('.poster-lang').text().replace(/\s+/g, ' ').trim() || "Türkçe";
-
-                // منع تكرار نفس الفيلم في المصفوفة
-                if (!moviesList.some(m => m.link === link)) {
-                    moviesList.push({
-                        title,
-                        link,
-                        image: image.split(' ')[0], // جلب أول رابط صورة فقط في حال وجود srcset
-                        year,
-                        imdb: imdb.replace(/[^0-9.]/g, ''), // استخراج الرقم فقط
-                        language: lang
-                    });
-                }
+            if (label.includes('director')) {
+                meta.director = valueElem.text().trim();
+            } else if (label.includes('year')) {
+                meta.year = valueElem.text().trim();
+            } else if (label.includes('genre')) {
+                meta.genre = valueElem.find('a').map((index, a) => $(a).text().trim()).get();
+            } else if (label.includes('box office')) {
+                meta.boxOffice = valueElem.text().trim();
+            } else if (label.includes('production')) {
+                meta.production = valueElem.text().trim();
+            } else if (label.includes('awards')) {
+                meta.awards = valueElem.text().trim();
             }
         });
 
-        fs.writeFileSync('movies.json', JSON.stringify(moviesList, null, 4), 'utf-8');
-        console.log(`✅ تم استخراج ${moviesList.length} فيلم بنجاح!`);
-        
+        // 3. استخراج مقاطع الفيديو (Clips) المتاحة داخل الصفحة
+        const clips = [];
+        $('.clip-card-collect-wrapper').each((i, elem) => {
+            const aTag = $(elem).find('a.smallClipContainer');
+            const clipLink = aTag.attr('href') || '';
+            const fullClipLink = clipLink.startsWith('http') ? clipLink : BASE_URL + clipLink;
+            
+            const imgTag = aTag.find('picture.clipThumb img');
+            const thumbnail = imgTag.attr('src') || imgTag.attr('data-src') || '';
+            
+            const duration = aTag.find('.videoDuration').text().trim() || "";
+            const clipTitle = aTag.find('.clipTitle').text().trim() || "";
+
+            if (clipTitle && fullClipLink) {
+                clips.push({
+                    title: clipTitle,
+                    link: fullClipLink,
+                    thumbnail: thumbnail,
+                    duration: duration
+                });
+            }
+        });
+
+        return { description, meta, clips };
+
     } catch (error) {
-        console.error(`❌ خطأ في الأفلام: ${error.message}`);
+        console.error(`⚠️ خطأ أثناء جلب تفاصيل الرابط ${movieLink}:`, error.message);
+        return null;
+    }
+}
+
+async function startScraping() {
+    const targetUrl = 'https://clip.cafe/?srsltid=AfmBOoq8ftECMI7zkvwfoPP4peOCKBY8z5YdXn7IlNOqVLCtQJb6pHK0';
+    console.log(`🚀 جاري جلب قائمة الأفلام الرئيسية من: ${targetUrl}`);
+
+    try {
+        const response = await fetch(targetUrl, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`فشل جلب الصفحة الرئيسية. كود الخطأ: ${response.status}`);
+
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        const moviesList = [];
+        const detailPromises = [];
+
+        // استهداف الكلاس المطلوب في الهيكل الجديد
+        $('a.moviePosterBox').each((index, element) => {
+            const elem = $(element);
+            const title = elem.attr('title')?.trim() || elem.find('.movieTitle').text().trim() || '';
+            const relativeLink = elem.attr('href') || '';
+            const fullLink = relativeLink.startsWith('http') ? relativeLink : BASE_URL + relativeLink;
+
+            const imgTag = elem.find('picture img');
+            const image = imgTag.attr('src') || imgTag.attr('data-src') || '';
+
+            if (title && fullLink) {
+                const movieData = {
+                    title,
+                    link: fullLink,
+                    image: image.startsWith('http') ? image : BASE_URL + image,
+                    description: "",
+                    meta: {},
+                    clips: []
+                };
+
+                moviesList.push(movieData);
+
+                // تجهيز جلب البيانات العميقة لكل فيلم بشكل متوازٍ فوري وسريع
+                detailPromises.push(
+                    fetchMovieDetails(fullLink).then(details => {
+                        if (details) {
+                            movieData.description = details.description;
+                            movieData.meta = details.meta;
+                            movieData.clips = details.clips;
+                        }
+                    })
+                );
+            }
+        });
+
+        console.log(`⏳ جاري فحص استخراج تفاصيل الـ (${moviesList.length}) فيلم ومقاطع الفيديو الخاصة بها بسرعة...`);
+        // تنفيذ طلبات جلب تفاصيل الأفلام معاً لضمان أقصى سرعة
+        await Promise.all(detailPromises);
+
+        // حفظ النتيجة النهائية الشاملة
+        fs.writeFileSync('movies.json', JSON.stringify(moviesList, null, 4), 'utf-8');
+        console.log(`✅ اكتمل السحب بنجاح! تم استخراج وحفظ ${moviesList.length} فيلم بالتفاصيل والمقاطع في ملف movies.json`);
+
+    } catch (error) {
+        console.error(`❌ خطأ عام أثناء التشغيل: ${error.message}`);
         if (!fs.existsSync('movies.json')) fs.writeFileSync('movies.json', '[]', 'utf-8');
     }
 }
 
-async function scrapeSeries() {
-    const targetUrl = 'https://www.hdfilmcehennemi.nl/yabancidiziizle-5/';
-    console.log(`🚀 جاري جلب المسلسلات من: ${targetUrl}`);
-
-    try {
-        const response = await fetch(getBypassUrl(targetUrl), {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        
-        if (!response.ok) throw new Error(`فشل الاتصال: ${response.status}`);
-        
-        const jsonResult = await response.json();
-        const htmlData = jsonResult.contents;
-
-        if (!htmlData) throw new Error("المحتوى فارغ");
-
-        const $ = cheerio.load(htmlData);
-        const seriesList = [];
-
-        // السحب المرن للمسلسلات بناءً على كلاس mini-poster أو روابط الحلقات /dizi/
-        $('a').each((index, element) => {
-            const elem = $(element);
-            const href = elem.attr('href') || '';
-
-            if (elem.hasClass('mini-poster') || href.includes('/dizi/')) {
-                const link = href.trim();
-                const title = elem.find('.mini-poster-title').text().trim() || elem.attr('alt')?.trim();
-                
-                if (!title) return;
-
-                const imgTag = elem.find('img');
-                const image = imgTag.attr('src') || imgTag.attr('data-src') || '';
-
-                const episodeInfo = elem.find('.mini-poster-episode-info').text().replace(/\s+/g, ' ').trim() || "1. Sezon";
-                const date = elem.find('time').text().trim() || "اليوم";
-                const lang = elem.find('.mini-poster-lang').text().trim() || "Türkçe";
-
-                if (!seriesList.some(s => s.link === link)) {
-                    seriesList.push({
-                        title,
-                        episode: episodeInfo,
-                        link,
-                        image,
-                        date,
-                        language: lang
-                    });
-                }
-            }
-        });
-
-        fs.writeFileSync('series.json', JSON.stringify(seriesList, null, 4), 'utf-8');
-        console.log(`✅ تم استخراج ${seriesList.length} حلقة مسلسل بنجاح!`);
-        
-    } catch (error) {
-        console.error(`❌ خطأ في المسلسلات: ${error.message}`);
-        if (!fs.existsSync('series.json')) fs.writeFileSync('series.json', '[]', 'utf-8');
-    }
-}
-
-async function main() {
-    await scrapeMovies();
-    console.log('-'.repeat(30));
-    await scrapeSeries();
-}
-
-main();
+startScraping();
