@@ -1,11 +1,11 @@
-name: Auto Movie and Series Scraper (JS)
+name: Auto Movie and Series Scraper
 
 on:
   schedule:
-    # يعمل تلقائياً كل 12 ساعة
+    # يشتغل تلقائياً كل 12 ساعة
     - cron: '0 */12 * * *'
   workflow_dispatch:
-    # يتيح لك التشغيل اليدوي من موقع جيتهاب
+    # يتيح لك تشغيله يدوياً بضغطة زر من موقع جيتهاب
 
 jobs:
   scrape-and-save:
@@ -15,25 +15,25 @@ jobs:
       contents: write
 
     steps:
-    # 1. جلب الكود من المستودع
+    # 1. سحب الكود من المستودع
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. إعداد بيئة Node.js
+    # 2. إعداد بيئة Node.js (استخدام نسخة 20 المستقرة)
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
 
-    # 3. تثبيت المكتبات المطلوبة مباشرة
+    # 3. تثبيت مكتبة cheerio فقط (تم الاستغناء عن axios)
     - name: Install dependencies
-      run: npm install axios cheerio
+      run: npm install cheerio
 
-    # 4. تشغيل سكربت الجافاسكريبت
-    - name: Run JS Scraper
+    # 4. تشغيل السكربت
+    - name: Run Scraper
       run: node scraper.js
 
-    # 5. عمل الـ Commit والـ Push للملفات الناتجة
+    # 5. رفع وحفظ ملفات الـ JSON في مستودعك تلقائياً
     - name: Commit and Push changes
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -41,8 +41,8 @@ jobs:
         
         git add movies.json series.json
         if git diff --cached --quiet; then
-          echo "لا توجد أي بيانات جديدة لتحديثها."
+          echo "لا توجد تحديثات جديدة للبيانات."
         else
-          git commit -m "تحديث تلقائي (Node.js): تم تحديث movies.json و series.json"
+          git commit -m "تحديث تلقائي: تم تجديد ملفات movies.json و series.json"
           git push
         fi
