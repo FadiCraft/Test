@@ -1,41 +1,42 @@
 const cheerio = require('cheerio');
 const fs = require('fs');
 
-// إعداد الـ Headers لمنع الحظر ومحاكاة متصفح حقيقي
-const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
-};
+// استخدام بروكسب وسيط مجاني لتخطي حظر جدار حماية الموقع لخوادم الجيتهاب (Error 451)
+function getBypassUrl(targetUrl) {
+    return `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+}
 
 async function scrapeMovies() {
-    const url = 'https://www.hdfilmcehennemi.nl/category/film-izle-2/';
-    console.log(`جاري جلب الأفلام من: ${url}`);
+    const targetUrl = 'https://www.hdfilmcehennemi.nl/category/film-izle-2/';
+    const bypassUrl = getBypassUrl(targetUrl);
+    console.log(`جاري جلب الأفلام (عبر البوابة الآمنة) من: ${targetUrl}`);
 
     try {
-        const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
-        if (!response.ok) throw new Error(`فشل الاتصال بالموقع، كود الخطأ: ${response.status}`);
+        const response = await fetch(bypassUrl, { signal: AbortSignal.timeout(25000) });
+        if (!response.ok) throw new Error(`فشل الاتصال بالبوابة الآمنة: ${response.status}`);
         
-        const data = await response.text();
-        const $ = cheerio.load(data);
+        const jsonResult = await response.json();
+        const htmlData = jsonResult.contents; // استخراج الـ HTML النظيف للموقع الأصلي
+
+        if (!htmlData) throw new Error("لم يتم استرجاع أي محتوى من الموقع.");
+
+        const $ = cheerio.load(htmlData);
         const moviesList = [];
 
-        // استخراج الأفلام بناءً على كلاس الـ poster الخاص بالرابط
+        // استخراج الأفلام بناءً على هيكل الـ HTML المرسل
         $('a.poster').each((index, element) => {
             try {
                 const elem = $(element);
                 const link = elem.attr('href')?.trim() || '';
                 const titleAttr = elem.attr('title')?.trim() || '';
 
-                // جلب رابط الصورة
                 const imgTag = elem.find('img');
                 let image = imgTag.attr('src')?.trim() || imgTag.attr('data-src')?.trim() || '';
 
-                // جلب السنة والتقييم من الميتا
                 const metaSpans = elem.find('div.poster-meta span');
                 const year = $(metaSpans[0]).text().trim();
                 const imdb = $(metaSpans[2]).text().trim();
 
-                // جلب العنوان واللغة
                 const title = elem.find('strong.poster-title').text().trim() || titleAttr;
                 const lang = elem.find('span.poster-lang').text().replace(/\s+/g, ' ').trim();
 
@@ -52,38 +53,43 @@ async function scrapeMovies() {
             }
         });
 
-        // حفظ البيانات في ملف movies.json
         fs.writeFileSync('movies.json', JSON.stringify(moviesList, null, 4), 'utf-8');
-        console.log(`✅ تم حفظ ${moviesList.length} فيلم بنجاح في movies.json`);
-
+        console.log(`✅ نجح السحب! تم حفظ ${moviesList.length} فيلم في movies.json`);
     } catch (error) {
-        console.error('❌ خطأ أثناء جلب صفحة الأفلام:', error.message);
+        console.error(`❌ خطأ أثناء جلب صفحة الأفلام: ${error.message}`);
+        // إنشاء مصفوفة فارغة لحماية سير العمل من الانهيار
+        if (!fs.existsSync('movies.json') || fs.readFileSync('movies.json', 'utf-8') === '') {
+            fs.writeFileSync('movies.json', '[]', 'utf-8');
+        }
     }
 }
 
 async function scrapeSeries() {
-    const url = 'https://www.hdfilmcehennemi.nl/yabancidiziizle-5/';
-    console.log(`جاري جلب المسلسلات من: ${url}`);
+    const targetUrl = 'https://www.hdfilmcehennemi.nl/yabancidiziizle-5/';
+    const bypassUrl = getBypassUrl(targetUrl);
+    console.log(`جاري جلب المسلسلات (عبر البوابة الآمنة) من: ${targetUrl}`);
 
     try {
-        const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
-        if (!response.ok) throw new Error(`فشل الاتصال بالموقع، كود الخطأ: ${response.status}`);
+        const response = await fetch(bypassUrl, { signal: AbortSignal.timeout(25000) });
+        if (!response.ok) throw new Error(`فشل الاتصال بالبوابة الآمنة: ${response.status}`);
+        
+        const jsonResult = await response.json();
+        const htmlData = jsonResult.contents;
 
-        const data = await response.text();
-        const $ = cheerio.load(data);
+        if (!htmlData) throw new Error("لم يتم استرجاع أي محتوى من الموقع.");
+
+        const $ = cheerio.load(htmlData);
         const seriesList = [];
 
-        // استخراج المسلسلات بناءً على كلاس mini-poster
+        // استخراج المسلسلات بناءً على هيكل الـ HTML المرسل
         $('a.mini-poster').each((index, element) => {
             try {
                 const elem = $(element);
                 const link = elem.attr('href')?.trim() || '';
 
-                // جلب رابط الصورة
                 const imgTag = elem.find('img');
                 const image = imgTag.attr('src')?.trim() || imgTag.attr('data-src')?.trim() || '';
 
-                // جلب رقم الحلقة، العنوان، التاريخ واللغة
                 const episodeInfo = elem.find('div.mini-poster-episode-info').text().replace(/\s+/g, ' ').trim();
                 const title = elem.find('h4.mini-poster-title').text().trim();
                 const date = elem.find('time.episode-date').text().trim();
@@ -102,16 +108,17 @@ async function scrapeSeries() {
             }
         });
 
-        // حفظ البيانات في ملف series.json
         fs.writeFileSync('series.json', JSON.stringify(seriesList, null, 4), 'utf-8');
-        console.log(`✅ تم حفظ ${seriesList.length} حلقة مسلسل بنجاح في series.json`);
-
+        console.log(`✅ نجح السحب! تم حفظ ${seriesList.length} حلقة مسلسل في series.json`);
     } catch (error) {
-        console.error('❌ خطأ أثناء جلب صفحة المسلسلات:', error.message);
+        console.error(`❌ خطأ أثناء جلب صفحة المسلسلات: ${error.message}`);
+        // إنشاء مصفوفة فارغة لحماية سير العمل من الانهيار
+        if (!fs.existsSync('series.json') || fs.readFileSync('series.json', 'utf-8') === '') {
+            fs.writeFileSync('series.json', '[]', 'utf-8');
+        }
     }
 }
 
-// دالة التشغيل الرئيسية
 async function main() {
     await scrapeMovies();
     console.log('-'.repeat(30));
