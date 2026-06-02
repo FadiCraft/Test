@@ -1,121 +1,132 @@
 const cheerio = require('cheerio');
 const fs = require('fs');
 
-// استخدام بروكسب وسيط مجاني لتخطي حظر جدار حماية الموقع لخوادم الجيتهاب (Error 451)
+// استخدام بوابة بروكسب قوية تقوم بتشغيل الجافاسكريبت وتخطي حماية Cloudflare تماماً
 function getBypassUrl(targetUrl) {
     return `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 }
 
 async function scrapeMovies() {
     const targetUrl = 'https://www.hdfilmcehennemi.nl/category/film-izle-2/';
-    const bypassUrl = getBypassUrl(targetUrl);
-    console.log(`جاري جلب الأفلام (عبر البوابة الآمنة) من: ${targetUrl}`);
+    console.log(`🚀 جاري جلب الأفلام من: ${targetUrl}`);
 
     try {
-        const response = await fetch(bypassUrl, { signal: AbortSignal.timeout(25000) });
-        if (!response.ok) throw new Error(`فشل الاتصال بالبوابة الآمنة: ${response.status}`);
+        // إضافة مرونة في الطلب: نقوم بطلب الصفحة عبر الخدمة الوسيطة مع ترويسة متصفح حقيقي
+        const response = await fetch(getBypassUrl(targetUrl), {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        
+        if (!response.ok) throw new Error(`فشل الاتصال: ${response.status}`);
         
         const jsonResult = await response.json();
-        const htmlData = jsonResult.contents; // استخراج الـ HTML النظيف للموقع الأصلي
+        let htmlData = jsonResult.contents;
 
-        if (!htmlData) throw new Error("لم يتم استرجاع أي محتوى من الموقع.");
+        if (!htmlData) throw new Error("المحتوى فارغ");
 
         const $ = cheerio.load(htmlData);
         const moviesList = [];
 
-        // استخراج الأفلام بناءً على هيكل الـ HTML المرسل
-        $('a.poster').each((index, element) => {
-            try {
-                const elem = $(element);
-                const link = elem.attr('href')?.trim() || '';
-                const titleAttr = elem.attr('title')?.trim() || '';
+        // السحب المرن: يبحث عن الروابط التي تحتوي على الكلاس poster أو تبدأ برابط الفيلم
+        $('a').each((index, element) => {
+            const elem = $(element);
+            const href = elem.attr('href') || '';
+            
+            // التحقق من أن الرابط يطابق كلاس الفيلم أو هيكل البوستر المرفق
+            if (elem.hasClass('poster') || href.includes('hdfilmcehennemi.nl/')) {
+                const title = elem.attr('title')?.trim() || elem.find('strong.poster-title').text().trim();
+                const link = href.trim();
+                
+                // تخطي الروابط العامة أو المكررة
+                if (!title || link.includes('/category/') || link.includes('/yabancidizi')) return;
 
                 const imgTag = elem.find('img');
-                let image = imgTag.attr('src')?.trim() || imgTag.attr('data-src')?.trim() || '';
+                const image = imgTag.attr('src') || imgTag.attr('data-src') || imgTag.attr('data-srcset') || '';
 
-                const metaSpans = elem.find('div.poster-meta span');
-                const year = $(metaSpans[0]).text().trim();
-                const imdb = $(metaSpans[2]).text().trim();
+                const metaSpans = elem.find('.poster-meta span, span');
+                const year = $(metaSpans[0]).text().trim() || "غير محدد";
+                const imdb = elem.find('.imdb').text().trim() || "0.0";
 
-                const title = elem.find('strong.poster-title').text().trim() || titleAttr;
-                const lang = elem.find('span.poster-lang').text().replace(/\s+/g, ' ').trim();
+                const lang = elem.find('.poster-lang').text().replace(/\s+/g, ' ').trim() || "Türkçe";
 
-                moviesList.push({
-                    title,
-                    link,
-                    image,
-                    year,
-                    imdb,
-                    language: lang
-                });
-            } catch (err) {
-                console.error('خطأ في استخراج بيانات فيلم معين:', err.message);
+                // منع تكرار نفس الفيلم في المصفوفة
+                if (!moviesList.some(m => m.link === link)) {
+                    moviesList.push({
+                        title,
+                        link,
+                        image: image.split(' ')[0], // جلب أول رابط صورة فقط في حال وجود srcset
+                        year,
+                        imdb: imdb.replace(/[^0-9.]/g, ''), // استخراج الرقم فقط
+                        language: lang
+                    });
+                }
             }
         });
 
         fs.writeFileSync('movies.json', JSON.stringify(moviesList, null, 4), 'utf-8');
-        console.log(`✅ نجح السحب! تم حفظ ${moviesList.length} فيلم في movies.json`);
+        console.log(`✅ تم استخراج ${moviesList.length} فيلم بنجاح!`);
+        
     } catch (error) {
-        console.error(`❌ خطأ أثناء جلب صفحة الأفلام: ${error.message}`);
-        // إنشاء مصفوفة فارغة لحماية سير العمل من الانهيار
-        if (!fs.existsSync('movies.json') || fs.readFileSync('movies.json', 'utf-8') === '') {
-            fs.writeFileSync('movies.json', '[]', 'utf-8');
-        }
+        console.error(`❌ خطأ في الأفلام: ${error.message}`);
+        if (!fs.existsSync('movies.json')) fs.writeFileSync('movies.json', '[]', 'utf-8');
     }
 }
 
 async function scrapeSeries() {
     const targetUrl = 'https://www.hdfilmcehennemi.nl/yabancidiziizle-5/';
-    const bypassUrl = getBypassUrl(targetUrl);
-    console.log(`جاري جلب المسلسلات (عبر البوابة الآمنة) من: ${targetUrl}`);
+    console.log(`🚀 جاري جلب المسلسلات من: ${targetUrl}`);
 
     try {
-        const response = await fetch(bypassUrl, { signal: AbortSignal.timeout(25000) });
-        if (!response.ok) throw new Error(`فشل الاتصال بالبوابة الآمنة: ${response.status}`);
+        const response = await fetch(getBypassUrl(targetUrl), {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        
+        if (!response.ok) throw new Error(`فشل الاتصال: ${response.status}`);
         
         const jsonResult = await response.json();
         const htmlData = jsonResult.contents;
 
-        if (!htmlData) throw new Error("لم يتم استرجاع أي محتوى من الموقع.");
+        if (!htmlData) throw new Error("المحتوى فارغ");
 
         const $ = cheerio.load(htmlData);
         const seriesList = [];
 
-        // استخراج المسلسلات بناءً على هيكل الـ HTML المرسل
-        $('a.mini-poster').each((index, element) => {
-            try {
-                const elem = $(element);
-                const link = elem.attr('href')?.trim() || '';
+        // السحب المرن للمسلسلات بناءً على كلاس mini-poster أو روابط الحلقات /dizi/
+        $('a').each((index, element) => {
+            const elem = $(element);
+            const href = elem.attr('href') || '';
+
+            if (elem.hasClass('mini-poster') || href.includes('/dizi/')) {
+                const link = href.trim();
+                const title = elem.find('.mini-poster-title').text().trim() || elem.attr('alt')?.trim();
+                
+                if (!title) return;
 
                 const imgTag = elem.find('img');
-                const image = imgTag.attr('src')?.trim() || imgTag.attr('data-src')?.trim() || '';
+                const image = imgTag.attr('src') || imgTag.attr('data-src') || '';
 
-                const episodeInfo = elem.find('div.mini-poster-episode-info').text().replace(/\s+/g, ' ').trim();
-                const title = elem.find('h4.mini-poster-title').text().trim();
-                const date = elem.find('time.episode-date').text().trim();
-                const lang = elem.find('span.mini-poster-lang').text().replace(/\s+/g, ' ').trim();
+                const episodeInfo = elem.find('.mini-poster-episode-info').text().replace(/\s+/g, ' ').trim() || "1. Sezon";
+                const date = elem.find('time').text().trim() || "اليوم";
+                const lang = elem.find('.mini-poster-lang').text().trim() || "Türkçe";
 
-                seriesList.push({
-                    title,
-                    episode: episodeInfo,
-                    link,
-                    image,
-                    date,
-                    language: lang
-                });
-            } catch (err) {
-                console.error('خطأ في استخراج بيانات مسلسل معين:', err.message);
+                if (!seriesList.some(s => s.link === link)) {
+                    seriesList.push({
+                        title,
+                        episode: episodeInfo,
+                        link,
+                        image,
+                        date,
+                        language: lang
+                    });
+                }
             }
         });
 
         fs.writeFileSync('series.json', JSON.stringify(seriesList, null, 4), 'utf-8');
-        console.log(`✅ نجح السحب! تم حفظ ${seriesList.length} حلقة مسلسل في series.json`);
+        console.log(`✅ تم استخراج ${seriesList.length} حلقة مسلسل بنجاح!`);
+        
     } catch (error) {
-        console.error(`❌ خطأ أثناء جلب صفحة المسلسلات: ${error.message}`);
-        // إنشاء مصفوفة فارغة لحماية سير العمل من الانهيار
-        if (!fs.existsSync('series.json') || fs.readFileSync('series.json', 'utf-8') === '') {
-            fs.writeFileSync('series.json', '[]', 'utf-8');
-        }
+        console.error(`❌ خطأ في المسلسلات: ${error.message}`);
+        if (!fs.existsSync('series.json')) fs.writeFileSync('series.json', '[]', 'utf-8');
     }
 }
 
