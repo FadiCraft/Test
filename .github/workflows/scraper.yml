@@ -1,0 +1,48 @@
+name: Auto Movie and Series Scraper (JS)
+
+on:
+  schedule:
+    # يعمل تلقائياً كل 12 ساعة
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+    # يتيح لك التشغيل اليدوي من موقع جيتهاب
+
+jobs:
+  scrape-and-save:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+
+    steps:
+    # 1. جلب الكود من المستودع
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2. إعداد بيئة Node.js
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    # 3. تثبيت المكتبات المطلوبة مباشرة
+    - name: Install dependencies
+      run: npm install axios cheerio
+
+    # 4. تشغيل سكربت الجافاسكريبت
+    - name: Run JS Scraper
+      run: node scraper.js
+
+    # 5. عمل الـ Commit والـ Push للملفات الناتجة
+    - name: Commit and Push changes
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        
+        git add movies.json series.json
+        if git diff --cached --quiet; then
+          echo "لا توجد أي بيانات جديدة لتحديثها."
+        else
+          git commit -m "تحديث تلقائي (Node.js): تم تحديث movies.json و series.json"
+          git push
+        fi
